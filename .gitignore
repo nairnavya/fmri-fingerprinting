@@ -1,0 +1,20 @@
+# OS files
+.DS_Store
+
+# Editor
+.vscode/
+.ipynb_checkpoints/
+
+# Python
+__pycache__/
+*.pyc
+
+# Neuroimaging data
+*.nii
+*.nii.gz
+*.npy
+*.npz
+
+# Project data folders
+data/raw
+data/processed

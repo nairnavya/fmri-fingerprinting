@@ -1,57 +1,101 @@
 from pathlib import Path
+import sys
+import numpy as np
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.append(str(PROJECT_ROOT))
+
+from src import load_data
+from src import preprocess
+from src import apply_atlas
+from src import connectivity
 
 
-from src.load_data import find_condition_files
-from src.preprocess import load_motion_regressors, preprocess_node_timeseries
-from src.apply_atlas import extract_atlas_timeseries
+def process_condition(subject_dir, atlas_path, condition, output_dir):
+    files = load_data.find_condition_files(subject_dir, condition)
 
-
-def main():
-    subject_dir = Path("data/raw/100307")
-    atlas_path = Path("atlas/shen_268_atlas.nii.gz")
-
-    condition = "tfMRI_WM"
-
-
-    files = find_condition_files(subject_dir, condition)
-
+    run_timeseries = {}
 
     for direction in ["LR", "RL"]:
         bold_path = files[direction]["bold"]
         motion_path = files[direction]["motion"]
 
-        print("Processing:", condition, direction)
+        print(f"Processing {subject_dir.name}: {condition}_{direction}")
 
-        # raw NIfTI:
-        # X × Y × Z × T
-        node_timeseries = extract_atlas_timeseries(
+        node_ts = apply_atlas.extract_atlas_timeseries(
             nifti_path=bold_path,
             atlas_path=atlas_path
         )
-        # after atlas:
-        # T × 268
 
-        # motion regressors:
-        # T × 12
-        motion_regressors = load_motion_regressors(motion_path)
+        motion = preprocess.load_motion_regressors(motion_path)
 
-        # cleaned node time series:
-        # T × 268
-        cleaned_timeseries = preprocess_node_timeseries(
-            node_timeseries=node_timeseries,
-            motion_regressors=motion_regressors,
+        cleaned_ts = preprocess.preprocess_node_timeseries(
+            node_timeseries=node_ts,
+            motion_regressors=motion,
             tr=0.72
         )
 
-        print("Cleaned shape:", cleaned_timeseries.shape)
+        run_timeseries[direction] = cleaned_ts
 
-    
-    
-    # @TODO #
-    # Left to implement: 
-    # - concatenate LR/RL
-    # - compute connectivity matrix
-    # - fingerprint subjects
+        np.save(
+            output_dir / f"{condition}_{direction}_timeseries.npy",
+            cleaned_ts
+        )
+
+    combined_ts = connectivity.concatenate_runs(
+        run_timeseries["LR"],
+        run_timeseries["RL"]
+    )
+
+    fc_matrix = connectivity.compute_fc_matrix(combined_ts)
+
+    np.save(output_dir / f"{condition}_fc.npy", fc_matrix)
+
+    return fc_matrix
+
+
+def process_subject(subject_dir, atlas_path, conditions, output_root):
+    subject_dir = Path(subject_dir)
+    subject_id = subject_dir.name
+
+    output_dir = Path(output_root) / subject_id
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    subject_matrices = {}
+
+    for condition in conditions:
+        fc_matrix = process_condition(
+            subject_dir=subject_dir,
+            atlas_path=atlas_path,
+            condition=condition,
+            output_dir=output_dir
+        )
+
+        subject_matrices[condition] = fc_matrix
+
+    return subject_matrices
+
+
+def main():
+    subject_dir = PROJECT_ROOT / "data_raw" / "100307"
+    atlas_path = PROJECT_ROOT / "atlas" / "shen_268_atlas.nii.gz"
+    output_root = PROJECT_ROOT / "data_processed"
+
+    conditions = [
+        "rfMRI_REST1",
+        "rfMRI_REST2",
+        "tfMRI_WM",
+        "tfMRI_MOTOR",
+        "tfMRI_LANGUAGE",
+        "tfMRI_EMOTION",
+    ]
+
+    process_subject(
+        subject_dir=subject_dir,
+        atlas_path=atlas_path,
+        conditions=conditions,
+        output_root=output_root
+    )
 
 
 if __name__ == "__main__":

@@ -77,25 +77,24 @@ def process_subject(subject_dir, atlas_path, conditions, output_root):
 
 
 def main():
-    subject_dir = PROJECT_ROOT / "data_raw" / "100307"
-    atlas_path = PROJECT_ROOT / "atlas" / "shen_268_atlas.nii.gz"
-    output_root = PROJECT_ROOT / "data_processed"
+    subject_dir = PROJECT_ROOT / "data" / "raw" / "103414"
+    atlas_path = PROJECT_ROOT / "atlas" / "shen_2mm_268_parcellation.nii"
+    output_root = PROJECT_ROOT / "data" / "processed"
 
     conditions = [
         "rfMRI_REST1",
         "rfMRI_REST2",
-        "tfMRI_WM",
-        "tfMRI_MOTOR",
-        "tfMRI_LANGUAGE",
-        "tfMRI_EMOTION",
     ]
 
-    process_subject(
+    
+    results = process_subject(  
         subject_dir=subject_dir,
         atlas_path=atlas_path,
         conditions=conditions,
         output_root=output_root
     )
+
+    print(results.keys())
 
 
 if __name__ == "__main__":

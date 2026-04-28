@@ -28,11 +28,12 @@ def find_condition_files(subject, condition):
         if len(nii_files) == 0:
             raise FileNotFoundError(f"No volumetric cleaned NIfTI found in {run_dir}")
 
-        if len(nii_files) > 0:
+        if len(nii_files) > 1:
+            print("Files after filter:", nii_files)
             raise FileNotFoundError(f"Greater than 1 cleaned NIfTI found in {run_dir}")
 
         bold_path = nii_files[0]
-        motion_path = run_dir / "Movement_Regressors"
+        motion_path = run_dir / "Movement_Regressors.txt"
 
         files[direction] = {
             "bold": bold_path,

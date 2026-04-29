@@ -12,9 +12,7 @@ __pycache__/
 # Neuroimaging data
 *.nii
 *.nii.gz
-*.npy
 *.npz
 
 # Project data folders
 data/raw
-data/processed

@@ -8,7 +8,7 @@ def find_condition_files(subject, condition):
     files = {}
 
     for direction in ["LR", "RL"]:
-        run_name = f"{condition.upper()}_{direction}" # begin with 
+        run_name = f"{condition}_{direction}" # begin with 
         run_dir = results_dir / run_name
 
         if not run_dir.exists():

@@ -77,7 +77,7 @@ def process_subject(subject_dir, atlas_path, conditions, output_root):
 
 
 def main():
-    subject_dir = PROJECT_ROOT / "data" / "raw" / "103414"
+    subject_dir = PROJECT_ROOT / "data" / "raw" / "151223"
     atlas_path = PROJECT_ROOT / "atlas" / "shen_2mm_268_parcellation.nii"
     output_root = PROJECT_ROOT / "data" / "processed"
 

@@ -90,7 +90,7 @@ def main():
         subject_dir = PROJECT_ROOT / "data" / "raw" / "extracted_data" / f"{subjects}"
         print(subject_dir) 
         atlas_path = PROJECT_ROOT / "atlas" / "shen_2mm_268_parcellation.nii"
-        output_root = PROJECT_ROOT / "data" / "processed" / 'ADITI'
+        output_root = PROJECT_ROOT / "data" / "processed" 
         conditions = [
             "rfMRI_REST1",
             "rfMRI_REST2",

@@ -9,7 +9,7 @@ def matrix_similarity(matrix_a, matrix_b):
     upper_b = matrix_b[np.triu_indices_from(matrix_b, k=1)]
 
     r, _ = pearsonr(upper_a, upper_b)
-
+ 
     return r
 
 
@@ -17,9 +17,9 @@ def matrix_similarity(matrix_a, matrix_b):
 def identify_subject(target_matrix, database_matrices):
     # database_matrices: dict where keys are subject IDs and values are FC matrices
     # when was database_matrices created?
-    scores = {}
+    scores = {}   #dictionary 
 
-    for subject_id, db_matrix in database_matrices.items():
+    for subject_id, db_matrix in database_matrices.items(): 
         scores[subject_id] = matrix_similarity(target_matrix, db_matrix)
 
     predicted_subject = max(scores, key=scores.get)

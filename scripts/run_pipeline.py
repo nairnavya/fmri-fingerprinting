@@ -77,24 +77,34 @@ def process_subject(subject_dir, atlas_path, conditions, output_root):
 
 
 def main():
-    subject_dir = PROJECT_ROOT / "data" / "raw" / "151223"
-    atlas_path = PROJECT_ROOT / "atlas" / "shen_2mm_268_parcellation.nii"
-    output_root = PROJECT_ROOT / "data" / "processed"
 
-    conditions = [
-        "rfMRI_REST1",
-        "rfMRI_REST2",
+    SUBJECTS = [
+        103414, 105115, 110411, 113619, 115320, 133827, 135932, 136833, 149539,
+        151223, 151627, 158540, 175439, 193239, 205725, 214423, 298051, 448347,
+        581349, 654754, 702133, 788876, 857263, 885975, 932554, 984472, 992774
     ]
 
-    
-    results = process_subject(  
-        subject_dir=subject_dir,
-        atlas_path=atlas_path,
-        conditions=conditions,
-        output_root=output_root
-    )
+    for subjects in SUBJECTS: 
 
-    print(results.keys())
+
+        subject_dir = PROJECT_ROOT / "data" / "raw" / "extracted_data" / f"{subjects}"
+        print(subject_dir) 
+        atlas_path = PROJECT_ROOT / "atlas" / "shen_2mm_268_parcellation.nii"
+        output_root = PROJECT_ROOT / "data" / "processed" / 'ADITI'
+        conditions = [
+            "rfMRI_REST1",
+            "rfMRI_REST2",
+        ]
+
+        
+        results = process_subject(  
+            subject_dir=subject_dir,
+            atlas_path=atlas_path,
+            conditions=conditions,
+            output_root=output_root
+        )
+
+        print(results.keys())
 
 
 if __name__ == "__main__":

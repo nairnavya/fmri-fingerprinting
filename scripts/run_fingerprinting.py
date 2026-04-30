@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from pathlib import Path
-import argparse
+import csv
 import sys
 
 import numpy as np
@@ -10,141 +12,182 @@ sys.path.append(str(PROJECT_ROOT))
 from src import fingerprint
 
 
-def load_condition_matrices(processed_root, condition, subjects=None):
-    processed_root = Path(processed_root)
-    matrices = {}
+PROCESSED_ROOT = PROJECT_ROOT / "data" / "processed"
+RESULTS_DIR = PROJECT_ROOT / "results"
+CONDITION_A = "rfMRI_REST1"
+CONDITION_B = "rfMRI_REST2"
 
-    if subjects is None:
-        subject_dirs = [p for p in processed_root.iterdir() if p.is_dir()]
-    else:
-        subject_dirs = [processed_root / subject for subject in subjects]
 
-    for subject_dir in sorted(subject_dirs):
+def _load_fc_matrix(matrix_path: Path, subject_id: str) -> np.ndarray:
+    """Load one FC matrix and validate square shape."""
+    matrix = np.load(matrix_path)
+
+    if matrix.ndim != 2:
+        raise ValueError(
+            f"FC matrix for subject {subject_id} is not 2D: {matrix_path} (shape={matrix.shape})"
+        )
+
+    if matrix.shape[0] != matrix.shape[1]:
+        raise ValueError(
+            f"FC matrix for subject {subject_id} is not square: {matrix_path} (shape={matrix.shape})"
+        )
+
+    if matrix.shape[0] < 2:
+        raise ValueError(
+            f"FC matrix for subject {subject_id} must be at least 2x2: {matrix_path}"
+        )
+
+    return matrix
+
+
+def load_rest_matrices(processed_root: Path):
+    """
+    Scan processed_root and load subjects with both REST1 and REST2 FC matrices.
+
+    Returns
+    -------
+    included_subjects : list[str]
+    rest1_matrices : dict[str, np.ndarray]
+    rest2_matrices : dict[str, np.ndarray]
+    """
+    if not processed_root.exists():
+        raise FileNotFoundError(f"Processed folder does not exist: {processed_root}")
+
+    included_subjects = []
+    rest1_matrices = {}
+    rest2_matrices = {}
+
+    for subject_dir in sorted([p for p in processed_root.iterdir() if p.is_dir()], key=lambda p: p.name):
         subject_id = subject_dir.name
-        matrix_path = subject_dir / f"{condition}_fc.npy"
+        rest1_path = subject_dir / f"{CONDITION_A}_fc.npy"
+        rest2_path = subject_dir / f"{CONDITION_B}_fc.npy"
 
-        if not matrix_path.exists():
+        if not rest1_path.exists() or not rest2_path.exists():
             continue
 
-        matrix = np.load(matrix_path)
+        rest1_matrix = _load_fc_matrix(rest1_path, subject_id)
+        rest2_matrix = _load_fc_matrix(rest2_path, subject_id)
 
-        if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
+        if rest1_matrix.shape != rest2_matrix.shape:
             raise ValueError(
-                f"FC matrix for subject {subject_id} is not square: {matrix_path}"
+                "REST1 and REST2 matrix shapes do not match for subject "
+                f"{subject_id}: {rest1_matrix.shape} vs {rest2_matrix.shape}"
             )
 
-        matrices[subject_id] = matrix
+        included_subjects.append(subject_id)
+        rest1_matrices[subject_id] = rest1_matrix
+        rest2_matrices[subject_id] = rest2_matrix
 
-    return matrices
+    return included_subjects, rest1_matrices, rest2_matrices
 
 
-def run_identification(target_matrices, database_matrices, exclude_self=False):
-    if exclude_self:
-        correct = 0
-        predictions = {}
+def save_predictions_csv(output_csv: Path, matches):
+    """Save prediction rows with columns true_subject, predicted_subject, correct."""
+    with output_csv.open("w", newline="") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["true_subject", "predicted_subject", "correct"],
+        )
+        writer.writeheader()
 
-        for true_subject, target_matrix in target_matrices.items():
-            database_without_self = {
-                subject_id: matrix
-                for subject_id, matrix in database_matrices.items()
-                if subject_id != true_subject
-            }
-
-            if not database_without_self:
-                raise ValueError(
-                    "Database is empty after excluding self; need at least 2 subjects."
-                )
-
-            predicted_subject, _ = fingerprint.identify_subject(
-                target_matrix,
-                database_without_self
+        for row in matches:
+            writer.writerow(
+                {
+                    "true_subject": row["true_subject"],
+                    "predicted_subject": row["predicted_subject"],
+                    "correct": row["correct"],
+                }
             )
 
-            predictions[true_subject] = predicted_subject
 
-            if predicted_subject == true_subject:
-                correct += 1
+def save_labels_txt(output_txt: Path, row_subjects, column_subjects):
+    """Save row/column subject order used by the similarity matrix."""
+    lines = ["rows (target subjects):"]
+    lines.extend(str(subject) for subject in row_subjects)
+    lines.append("")
+    lines.append("columns (database subjects):")
+    lines.extend(str(subject) for subject in column_subjects)
 
-        accuracy = correct / len(target_matrices)
-        return accuracy, predictions
+    output_txt.write_text("\n".join(lines) + "\n")
 
-    return fingerprint.fingerprint_accuracy(target_matrices, database_matrices)
+
+def run_direction(
+    *,
+    target_label: str,
+    database_label: str,
+    target_matrices,
+    database_matrices,
+    predictions_csv_path: Path,
+    similarity_npy_path: Path,
+    labels_txt_path: Path,
+):
+    """Run one fingerprinting direction and save outputs."""
+    accuracy, _, details = fingerprint.fingerprint_accuracy(
+        target_matrices=target_matrices,
+        database_matrices=database_matrices,
+    )
+
+    correct_count = details["correct_count"]
+    total_subjects = details["total_subjects"]
+    matches = details["matches"]
+    similarity_matrix = details["similarity_matrix"]
+    row_subjects = details["target_subjects"]
+    column_subjects = details["database_subjects"]
+
+    save_predictions_csv(predictions_csv_path, matches)
+    np.save(similarity_npy_path, similarity_matrix)
+    save_labels_txt(labels_txt_path, row_subjects, column_subjects)
+
+    print("=" * 72)
+    print(f"Fingerprinting: {target_label} -> {database_label}")
+    print(f"Included subjects: {total_subjects}")
+    print(f"Target condition:  {target_label}")
+    print(f"Database condition:{database_label}")
+    print(f"Correct / Total:   {correct_count} / {total_subjects}")
+    print(f"Accuracy:          {accuracy * 100:.2f}%")
+    print("Per-subject predictions:")
+
+    for row in matches:
+        status = "correct" if row["correct"] else "incorrect"
+        print(
+            f"  true={row['true_subject']}  predicted={row['predicted_subject']}  {status}"
+        )
+
+    print(f"Saved predictions CSV: {predictions_csv_path}")
+    print(f"Saved similarity NPY:  {similarity_npy_path}")
+    print(f"Saved labels TXT:      {labels_txt_path}")
+    print()
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Run subject fingerprinting from saved FC matrices."
-    )
-    parser.add_argument(
-        "--processed-root",
-        type=Path,
-        default=PROJECT_ROOT / "data_processed",
-        help="Root folder containing per-subject FC files."
-    )
-    parser.add_argument(
-        "--target-condition",
-        required=True,
-        help="Condition used for target matrices (example: rfMRI_REST1)."
-    )
-    parser.add_argument(
-        "--database-condition",
-        required=True,
-        help="Condition used for database matrices (example: rfMRI_REST2)."
-    )
-    parser.add_argument(
-        "--subjects",
-        nargs="+",
-        default=None,
-        help="Optional explicit subject IDs to include."
-    )
-    parser.add_argument(
-        "--exclude-self",
-        action="store_true",
-        help="Exclude each subject from its own database during identification."
-    )
+    included_subjects, rest1_matrices, rest2_matrices = load_rest_matrices(PROCESSED_ROOT)
 
-    args = parser.parse_args()
-
-    if not args.processed_root.exists():
-        raise FileNotFoundError(f"Missing processed root: {args.processed_root}")
-
-    target_all = load_condition_matrices(
-        processed_root=args.processed_root,
-        condition=args.target_condition,
-        subjects=args.subjects,
-    )
-    database_all = load_condition_matrices(
-        processed_root=args.processed_root,
-        condition=args.database_condition,
-        subjects=args.subjects,
-    )
-
-    common_subjects = sorted(set(target_all) & set(database_all))
-
-    if len(common_subjects) < 2:
+    if len(included_subjects) == 0:
         raise ValueError(
-            "Need at least 2 subjects with both target and database condition FC files."
+            f"No subjects with both {CONDITION_A}_fc.npy and {CONDITION_B}_fc.npy were found in {PROCESSED_ROOT}."
         )
 
-    target_matrices = {subject: target_all[subject] for subject in common_subjects}
-    database_matrices = {subject: database_all[subject] for subject in common_subjects}
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    accuracy, predictions = run_identification(
-        target_matrices=target_matrices,
-        database_matrices=database_matrices,
-        exclude_self=args.exclude_self
+    run_direction(
+        target_label=CONDITION_A,
+        database_label=CONDITION_B,
+        target_matrices=rest1_matrices,
+        database_matrices=rest2_matrices,
+        predictions_csv_path=RESULTS_DIR / "rest1_to_rest2_predictions.csv",
+        similarity_npy_path=RESULTS_DIR / "rest1_to_rest2_similarity.npy",
+        labels_txt_path=RESULTS_DIR / "rest1_to_rest2_labels.txt",
     )
 
-    print("Fingerprinting complete")
-    print(f"Target condition:   {args.target_condition}")
-    print(f"Database condition: {args.database_condition}")
-    print(f"Subjects used:      {len(common_subjects)}")
-    print(f"Exclude self:       {args.exclude_self}")
-    print(f"Accuracy:           {accuracy:.4f}")
-    print("")
-    print("Predictions")
-    for subject in common_subjects:
-        print(f"{subject} -> {predictions[subject]}")
+    run_direction(
+        target_label=CONDITION_B,
+        database_label=CONDITION_A,
+        target_matrices=rest2_matrices,
+        database_matrices=rest1_matrices,
+        predictions_csv_path=RESULTS_DIR / "rest2_to_rest1_predictions.csv",
+        similarity_npy_path=RESULTS_DIR / "rest2_to_rest1_similarity.npy",
+        labels_txt_path=RESULTS_DIR / "rest2_to_rest1_labels.txt",
+    )
 
 
 if __name__ == "__main__":
